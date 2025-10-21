@@ -1,0 +1,11 @@
+streamlit
+google-generativeai
+langchain
+langchain-google-genai
+faiss-cpu
+pymupdf
+pytesseract
+pillow
+camelot-py[cv]
+pandas
+opencv-python-headless
