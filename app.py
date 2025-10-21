@@ -15,6 +15,7 @@ from langchain.docstore.document import Document
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_qdrant import Qdrant # আমরা Qdrant ব্যবহার করছি
+from qdrant_client import QdrantClient # +++ ব্যাচ প্রসেসিং-এর জন্য এটি যোগ করা হয়েছে +++
 
 
 # --- সিস্টেম কনফিগারেশন এবং লগিং ---
@@ -176,26 +177,41 @@ def get_embeddings_model(_api_key: str):
         st.error(f"Error initializing embeddings. Is your API key correct? Error: {e}")
         return None
 
+# --- +++ এই ফাংশনটি 504 এরর ঠিক করার জন্য ব্যাচিং সহ আপডেট করা হয়েছে +++ ---
 def create_vector_store(all_chunks: List[Document], embeddings_model: Any) -> Qdrant:
-    """চাঙ্ক এবং এমবেডিং ব্যবহার করে একটি Qdrant ভেক্টর স্টোর তৈরি করে।"""
+    """চাঙ্ক এবং এমবেডিং ব্যবহার করে একটি Qdrant ভেক্টর স্টোর তৈরি করে। (ব্যাচ প্রসেসিং সহ)"""
     if not all_chunks:
         logger.warning("No chunks to process. Returning empty vector store.")
         return None
         
     logger.info(f"Creating Qdrant index from {len(all_chunks)} chunks...")
+    
+    # ইন-মেমোরি Qdrant ক্লায়েন্ট শুরু করুন
+    client = QdrantClient(location=":memory:")
+    collection_name = "docurag-collection"
+    
     try:
-        # Qdrant একটি ইন-মেমোরি স্টোর তৈরি করবে
-        vector_store = Qdrant.from_documents(
-            all_chunks,
-            embeddings_model,
-            location=":memory:",  # ইন-মেমোরি স্টোর ব্যবহার করুন
-            collection_name="docurag-collection"
+        # ভেক্টর স্টোর অবজেক্টটি প্রথমে তৈরি করুন
+        vector_store = Qdrant(
+            client=client,
+            collection_name=collection_name,
+            embeddings=embeddings_model
         )
-        logger.info("Qdrant index created successfully.")
+        
+        # এমবেডিং-এর জন্য ব্যাচ সাইজ (Batch Size) নির্ধারণ করুন
+        batch_size = 100 # একবারে ১০০টি চাঙ্ক প্রসেস করবে
+        
+        for i in range(0, len(all_chunks), batch_size):
+            batch = all_chunks[i:i + batch_size]
+            logger.info(f"Adding batch {i//batch_size + 1}/{len(all_chunks)//batch_size + 1} with {len(batch)} chunks...")
+            vector_store.add_documents(batch) # ব্যাচ যোগ করুন
+            
+        logger.info("Qdrant index created successfully with all batches.")
         return vector_store
+        
     except Exception as e:
-        # এটি প্রায়শই ভুল API কী-এর কারণে ঘটে
-        logger.error(f"Qdrant index creation failed: {e}")
+        # এটি প্রায়শই ভুল API কী-এর কারণে ঘটে (অথবা ব্যাচিং ফেইল হলে)
+        logger.error(f"Qdrant index creation/batching failed: {e}")
         st.error(f"Failed to create vector store. Is your API key correct? Error: {e}")
         return None
 
@@ -222,7 +238,6 @@ def get_rag_response(query: str, vector_store: Any, genai_model: Any) -> Dict[st
              return {"answer": "Please specify the table key. You can find keys in the 'Processed Tables' section."}
 
     # ১. রিট্রিভ (Retrieve)
-    # এই লাইনেই AttributeError ঘটছিল
     retriever = vector_store.as_retriever(search_k=4) # (I-4: top-k (3-5))
     retrieved_docs = retriever.get_relevant_documents(query)
     
@@ -304,7 +319,7 @@ def main():
             disabled=not st.session_state.api_key_configured
         )
         
-        # --- প্রসেস বাটন (এই লজিকটি সম্পূর্ণ আপডেট করা হয়েছে) ---
+        # --- প্রসেস বাটন (এই লজিকটি AttributeError-এর জন্য ঠিক করা আছে) ---
         if st.button("Process Documents", disabled=not uploaded_files or not st.session_state.api_key_configured):
             if uploaded_files:
                 with st.spinner("Processing documents... This may take a few minutes for large files or OCR."):
@@ -327,22 +342,21 @@ def main():
                             # প্রথমে একটি অস্থায়ী ভেরিয়েবলে স্টোর করুন
                             vector_store = create_vector_store(all_chunks, embeddings_model)
                             
-                            # +++ এই চেকটিই মূল সমাধান +++
                             if vector_store:
                                 # সফল হলেই সেশন স্টেটে সেভ করুন
                                 st.session_state.vector_store = vector_store
                                 st.session_state.documents_processed = True
                                 st.success(f"Processed {len(uploaded_files)} documents ({len(all_chunks)} chunks). Ready to chat!")
                             else:
-                                # যদি ভেক্টর স্টোর তৈরি না হয় (যেমন: ভুল API কী)
+                                # যদি ভেক্টর স্টোর তৈরি না হয় (যেমন: ভুল API কী বা 504 এরর)
                                 st.error("Failed to create vector store. Please check your API Key or console logs.")
-                                st.session_state.documents_processed = False # নিশ্চিত করুন এটি False
+                                st.session_state.documents_processed = False 
                         else:
                             st.warning("No text or table data could be extracted from the documents.")
-                            st.session_state.documents_processed = False # নিশ্চিত করুন এটি False
+                            st.session_state.documents_processed = False 
                     else:
                         st.error("Cannot process documents: Embeddings model failed to load.")
-                        st.session_state.documents_processed = False # নিশ্চিত করুন এটি False
+                        st.session_state.documents_processed = False 
 
         st.divider()
         
@@ -385,7 +399,7 @@ def main():
         if not st.session_state.api_key_configured:
             st.info("Please configure your Google API Key in the sidebar first.")
         elif not st.session_state.documents_processed:
-            st.info("Please upload and process your documents first.") # এখন এটি সঠিকভাবে কাজ করবে
+            st.info("Please upload and process your documents first.") 
         else:
             # ইউজার মেসেজ প্রদর্শন
             st.session_state.messages.append({"role": "user", "content": prompt})
