@@ -12,11 +12,10 @@ from typing import List, Tuple, Dict, Any
 
 import google.generativeai as genai
 from langchain.docstore.document import Document
-# from langchain_google_genai import GoogleGenerativeAIEmbeddings # --- পরিবর্তিত ---
-from langchain_huggingface import HuggingFaceEmbeddings # +++ নতুন +++
+from langchain_huggingface import HuggingFaceEmbeddings # আমরা লোকাল এমবেডিং ব্যবহার করছি
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_qdrant import Qdrant # আমরা Qdrant ব্যবহার করছি
-from qdrant_client import QdrantClient
+# from qdrant_client import QdrantClient # --- এই লাইনটি মুছে ফেলা হয়েছে ---
 
 
 # --- সিস্টেম কনফিগারেশন এবং লগিং ---
@@ -168,7 +167,6 @@ def chunk_data(file_name: str, processed_data: List[Tuple[int, str, str]]) -> Li
 # --- ৩. এমবেডিং এবং ভেক্টরাইজেশন ---
 # (I-3: Local Embeddings, Qdrant)
 
-# --- +++ এই ফাংশনটি Google API-এর বদলে লোকাল মডেল ব্যবহার করার জন্য আপডেট করা হয়েছে +++ ---
 @st.cache_resource(ttl=3600)
 def get_embeddings_model():
     """ফ্রি, ওপেন-সোর্স HuggingFace এমবেডিং মডেল লোড করে।"""
@@ -191,40 +189,30 @@ def get_embeddings_model():
         st.error(f"Error initializing local embeddings model. Error: {e}")
         return None
 
-# --- এই ফাংশনটি ব্যাচিং সহ আপডেট করা আছে ---
+# --- +++ এই ফাংশনটি "Collection not found" এরর ঠিক করার জন্য সিম্পল করা হয়েছে +++ ---
 def create_vector_store(all_chunks: List[Document], embeddings_model: Any) -> Qdrant:
-    """চাঙ্ক এবং এমবেডিং ব্যবহার করে একটি Qdrant ভেক্টর স্টোর তৈরি করে। (ব্যাচ প্রসেসিং সহ)"""
+    """চাঙ্ক এবং এমবেডিং ব্যবহার করে একটি Qdrant ভেক্টর স্টোর তৈরি করে।"""
     if not all_chunks:
         logger.warning("No chunks to process. Returning empty vector store.")
         return None
         
     logger.info(f"Creating Qdrant index from {len(all_chunks)} chunks...")
     
-    # ইন-মেমোরি Qdrant ক্লায়েন্ট শুরু করুন
-    client = QdrantClient(location=":memory:")
-    collection_name = "docurag-collection"
-    
     try:
-        # ভেক্টর স্টোর অবজেক্টটি প্রথমে তৈরি করুন
-        vector_store = Qdrant(
-            client=client,
-            collection_name=collection_name,
-            embeddings=embeddings_model
+        # লোকাল এমবেডিং মডেলের জন্য ব্যাচিং-এর দরকার নেই
+        # from_documents ফাংশনটি কালেকশন তৈরি করে এবং ডেটা যোগ করে, একবারে।
+        vector_store = Qdrant.from_documents(
+            all_chunks,
+            embeddings_model,
+            location=":memory:",  # ইন-মেমোরি স্টোর ব্যবহার করুন
+            collection_name="docurag-collection"
         )
-        
-        # এমবেডিং-এর জন্য ব্যাচ সাইজ (Batch Size) নির্ধারণ করুন
-        batch_size = 100 # একবারে ১০০টি চাঙ্ক প্রসেস করবে
-        
-        for i in range(0, len(all_chunks), batch_size):
-            batch = all_chunks[i:i + batch_size]
-            logger.info(f"Adding batch {i//batch_size + 1}/{len(all_chunks)//batch_size + 1} with {len(batch)} chunks...")
-            vector_store.add_documents(batch) # ব্যাচ যোগ করুন
             
-        logger.info("Qdrant index created successfully with all batches.")
+        logger.info("Qdrant index created successfully.")
         return vector_store
         
     except Exception as e:
-        logger.error(f"Qdrant index creation/batching failed: {e}")
+        logger.error(f"Qdrant index creation failed: {e}")
         st.error(f"Failed to create vector store. Error: {e}")
         return None
 
@@ -338,7 +326,6 @@ def main():
                 with st.spinner("Processing documents... (Loading local model first, this may take a moment)"):
                     all_chunks = []
                     
-                    # --- +++ এইখানে মূল পরিবর্তন +++ ---
                     # এমবেডিং মডেল লোড করা (এর জন্য API Key লাগে না)
                     embeddings_model = get_embeddings_model()
                     
