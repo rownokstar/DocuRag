@@ -14,7 +14,10 @@ import google.generativeai as genai
 from langchain.docstore.document import Document
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain.vectorstores.chroma import Chroma
+# from langchain.vectorstores.faiss import FAISS # --- পরিবর্তিত ---
+# from langchain.vectorstores.chroma import Chroma # --- পরিবর্তিত ---
+from langchain_qdrant import Qdrant # +++ নতুন +++
+
 
 # --- সিস্টেম কনফিগারেশন এবং লগিং ---
 
@@ -163,7 +166,7 @@ def chunk_data(file_name: str, processed_data: List[Tuple[int, str, str]]) -> Li
 
 
 # --- ৩. এমবেডিং এবং ভেক্টরাইজেশন ---
-# (I-3: gemini-embedding-001, Chroma)
+# (I-3: gemini-embedding-001, Qdrant)
 
 @st.cache_resource(ttl=3600)
 def get_embeddings_model(_api_key: str):
@@ -175,19 +178,26 @@ def get_embeddings_model(_api_key: str):
         st.error(f"Error initializing embeddings. Is your API key correct? Error: {e}")
         return None
 
-def create_vector_store(all_chunks: List[Document], embeddings_model: Any) -> Chroma:
-    """চাঙ্ক এবং এমবেডিং ব্যবহার করে একটি Chroma ভেক্টর স্টোর তৈরি করে।"""
+# --- Qdrant-এর জন্য এই ফাংশনটি সম্পূর্ণ আপডেট করা হয়েছে ---
+def create_vector_store(all_chunks: List[Document], embeddings_model: Any) -> Qdrant:
+    """চাঙ্ক এবং এমবেডিং ব্যবহার করে একটি Qdrant ভেক্টর স্টোর তৈরি করে।"""
     if not all_chunks:
         logger.warning("No chunks to process. Returning empty vector store.")
         return None
         
-    logger.info(f"Creating Chroma index from {len(all_chunks)} chunks...")
+    logger.info(f"Creating Qdrant index from {len(all_chunks)} chunks...")
     try:
-        vector_store = Chroma.from_documents(all_chunks, embeddings_model)
-        logger.info("Chroma index created successfully.")
+        # Qdrant একটি ইন-মেমোরি স্টোর তৈরি করবে
+        vector_store = Qdrant.from_documents(
+            all_chunks,
+            embeddings_model,
+            location=":memory:",  # ইন-মেমোরি স্টোর ব্যবহার করুন
+            collection_name="docurag-collection"
+        )
+        logger.info("Qdrant index created successfully.")
         return vector_store
     except Exception as e:
-        logger.error(f"Chroma index creation failed: {e}")
+        logger.error(f"Qdrant index creation failed: {e}")
         st.error(f"Failed to create vector store. Did you configure the API key? Error: {e}")
         return None
 
@@ -195,7 +205,8 @@ def create_vector_store(all_chunks: List[Document], embeddings_model: Any) -> Ch
 # --- ৪. RAG পাইপলাইন এবং জেনারেশন ---
 # (I-4: RAG Pipeline, Gemini API, Citations)
 
-def get_rag_response(query: str, vector_store: Chroma, genai_model: Any) -> Dict[str, Any]:
+# *** এই ফাংশনে কোনো পরিবর্তনের প্রয়োজন নেই, এটি Qdrant-এর সাথে কাজ করবে ***
+def get_rag_response(query: str, vector_store: Any, genai_model: Any) -> Dict[str, Any]:
     """
     RAG পাইপলাইন এক্সিকিউট করে: রিট্রিভ, প্রম্পট তৈরি, এবং জেনারেট।
     """
