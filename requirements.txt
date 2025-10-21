@@ -1,14 +1,11 @@
 streamlit
 google-generativeai
-langchain # --- No version constraint ---
-# langchain-core # --- Removed explicit core ---
-langchain-qdrant
-qdrant-client
+langchain # Shudhu eta rakhun, core etc. nijei install korbe
+qdrant-client # Qdrant er jonno
 pymupdf
 pytesseract
 pillow
 camelot-py
 pandas
 opencv-python-headless
-sentence-transformers
-langchain-huggingface
+sentence-transformers # Local embedding
