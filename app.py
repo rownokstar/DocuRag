@@ -12,7 +12,8 @@ from typing import List, Tuple, Dict, Any
 
 import google.generativeai as genai
 from langchain.docstore.document import Document
-from langchain_google_genai import GoogleGenerativeAIEmbeddings
+# from langchain_google_genai import GoogleGenerativeAIEmbeddings # --- পরিবর্তিত ---
+from langchain_huggingface import HuggingFaceEmbeddings # +++ নতুন +++
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_qdrant import Qdrant # আমরা Qdrant ব্যবহার করছি
 from qdrant_client import QdrantClient
@@ -165,25 +166,32 @@ def chunk_data(file_name: str, processed_data: List[Tuple[int, str, str]]) -> Li
 
 
 # --- ৩. এমবেডিং এবং ভেক্টরাইজেশন ---
-# (I-3: gemini-embedding-001, Qdrant)
+# (I-3: Local Embeddings, Qdrant)
 
-# --- +++ এই ফাংশনটি 503 এরর ঠিক করার জন্য আপডেট করা হয়েছে +++ ---
+# --- +++ এই ফাংশনটি Google API-এর বদলে লোকাল মডেল ব্যবহার করার জন্য আপডেট করা হয়েছে +++ ---
 @st.cache_resource(ttl=3600)
-def get_embeddings_model(_api_key: str):
-    """Google Generative AI এমবেডিং মডেল ক্যাশ করে।"""
+def get_embeddings_model():
+    """ফ্রি, ওপেন-সোর্স HuggingFace এমবেডিং মডেল লোড করে।"""
     try:
-        # --- +++ এইখানে মূল সমাধান +++ ---
-        # আমরা GoogleGenerativeAIEmbeddings-কে সরাসরি API Key দিচ্ছি
-        return GoogleGenerativeAIEmbeddings(
-            model="models/embedding-001",
-            google_api_key=_api_key  # কী-টি এখানে পাস করতে হবে
+        logger.info("Loading local embeddings model (all-MiniLM-L6-v2)...")
+        # এই মডেলটি Streamlit-এর CPU-তে চলবে
+        model_name = "sentence-transformers/all-MiniLM-L6-v2"
+        model_kwargs = {'device': 'cpu'}
+        encode_kwargs = {'normalize_embeddings': False}
+        
+        embeddings = HuggingFaceEmbeddings(
+            model_name=model_name,
+            model_kwargs=model_kwargs,
+            encode_kwargs=encode_kwargs
         )
+        logger.info("Local embeddings model loaded successfully.")
+        return embeddings
     except Exception as e:
-        logger.error(f"Failed to initialize embeddings model: {e}")
-        st.error(f"Error initializing embeddings. Is your API key correct? Error: {e}")
+        logger.error(f"Failed to initialize local embeddings model: {e}")
+        st.error(f"Error initializing local embeddings model. Error: {e}")
         return None
 
-# --- এই ফাংশনটি 504 এরর ঠিক করার জন্য ব্যাচিং সহ আপডেট করা আছে ---
+# --- এই ফাংশনটি ব্যাচিং সহ আপডেট করা আছে ---
 def create_vector_store(all_chunks: List[Document], embeddings_model: Any) -> Qdrant:
     """চাঙ্ক এবং এমবেডিং ব্যবহার করে একটি Qdrant ভেক্টর স্টোর তৈরি করে। (ব্যাচ প্রসেসিং সহ)"""
     if not all_chunks:
@@ -216,9 +224,8 @@ def create_vector_store(all_chunks: List[Document], embeddings_model: Any) -> Qd
         return vector_store
         
     except Exception as e:
-        # এটি প্রায়শই ভুল API কী-এর কারণে ঘটে (অথবা ব্যাচিং ফেইল হলে)
         logger.error(f"Qdrant index creation/batching failed: {e}")
-        st.error(f"Failed to create vector store. Is your API key correct? Error: {e}")
+        st.error(f"Failed to create vector store. Error: {e}")
         return None
 
 
@@ -300,7 +307,7 @@ def main():
     with st.sidebar:
         st.header("Configuration")
         
-        # Google API কী ইনপুট
+        # Google API কী ইনপুট (এটি এখনো জেনারেশনের জন্য প্রয়োজন)
         api_key = st.text_input("Enter your Google API Key", type="password")
         
         if api_key:
@@ -328,12 +335,12 @@ def main():
         # --- প্রসেস বাটন (এই লজিকটি AttributeError-এর জন্য ঠিক করা আছে) ---
         if st.button("Process Documents", disabled=not uploaded_files or not st.session_state.api_key_configured):
             if uploaded_files:
-                with st.spinner("Processing documents... This may take a few minutes for large files or OCR."):
+                with st.spinner("Processing documents... (Loading local model first, this may take a moment)"):
                     all_chunks = []
                     
-                    # এমবেডিং মডেল লোড করা
-                    # এইখানে api_key পাস করা হচ্ছে
-                    embeddings_model = get_embeddings_model(api_key)
+                    # --- +++ এইখানে মূল পরিবর্তন +++ ---
+                    # এমবেডিং মডেল লোড করা (এর জন্য API Key লাগে না)
+                    embeddings_model = get_embeddings_model()
                     
                     if embeddings_model:
                         for file in uploaded_files:
@@ -355,14 +362,14 @@ def main():
                                 st.session_state.documents_processed = True
                                 st.success(f"Processed {len(uploaded_files)} documents ({len(all_chunks)} chunks). Ready to chat!")
                             else:
-                                # যদি ভেক্টর স্টোর তৈরি না হয় (যেমন: ভুল API কী বা 503/504 এরর)
-                                st.error("Failed to create vector store. Please check your API Key or console logs.")
+                                # যদি ভেক্টর স্টোর তৈরি না হয়
+                                st.error("Failed to create vector store. Please check console logs.")
                                 st.session_state.documents_processed = False 
                         else:
                             st.warning("No text or table data could be extracted from the documents.")
                             st.session_state.documents_processed = False 
                     else:
-                        st.error("Cannot process documents: Embeddings model failed to load.")
+                        st.error("Cannot process documents: Local Embeddings model failed to load.")
                         st.session_state.documents_processed = False 
 
         st.divider()
