@@ -10,13 +10,14 @@ import pytesseract
 from PIL import Image
 from typing import List, Tuple, Dict, Any
 
-import google.generativeai as genai
+# import google.generativeai as genai # Removed Google GenAI
 # --- Latest LangChain Imports ---
 from langchain_core.documents import Document
 from langchain_community.embeddings import HuggingFaceEmbeddings # Embeddings from community
 from langchain_text_splitters import RecursiveCharacterTextSplitter # Splitter from its own package
-from langchain_qdrant import Qdrant # Qdrant integration package
-# --- ---
+from langchain_community.vectorstores import Qdrant # Vector store
+# --- +++ Ollama Import +++ ---
+from langchain_community.llms import Ollama # For using local LLMs like Llama 3
 
 
 # --- সিস্টেম কনফিগারেশন এবং লগিং ---
@@ -29,6 +30,11 @@ logger = logging.getLogger(__name__)
 # প্রয়োজন হলে এটি আনকমেন্ট করুন এবং আপনার Tesseract-এর পাথ দিন
 # pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
 
+# --- +++ IMPORTANT NOTE for Ollama +++ ---
+# Make sure Ollama is installed and running on your local machine.
+# You also need to have the model downloaded (e.g., run `ollama run llama3` in your terminal).
+# By default, this code assumes Ollama is running at http://localhost:11434
+# --- +++ ---
 
 # --- ১. PDF ইনজেশন এবং ডেটা এক্সট্রাকশন ---
 # (I-1: PyMuPDF, Tesseract, Camelot)
@@ -203,7 +209,7 @@ def create_vector_store(all_chunks: List[Document], embeddings_model: Any) -> Qd
     logger.info(f"Creating Qdrant index from {len(all_chunks)} chunks...")
 
     try:
-        # Qdrant vector store is imported from langchain_qdrant
+        # Qdrant vector store is imported from langchain_community.vectorstores
         vector_store = Qdrant.from_documents(
             all_chunks,
             embeddings_model,
@@ -221,11 +227,12 @@ def create_vector_store(all_chunks: List[Document], embeddings_model: Any) -> Qd
 
 
 # --- ৪. RAG পাইপলাইন এবং জেনারেশন ---
-# (I-KA-4: RAG Pipeline, Gemini API, Citations)
+# (I-KA-4: RAG Pipeline, Ollama LLM, Citations)
 
-def get_rag_response(query: str, vector_store: Any, genai_model: Any) -> Dict[str, Any]:
+# --- +++ Updated function signature and generation call +++ ---
+def get_rag_response(query: str, vector_store: Any, llm: Ollama) -> Dict[str, Any]:
     """
-    RAG পাইপলাইন এক্সিকিউট করে: রিট্রিভ, প্রম্পট তৈরি, এবং জেনারেট।
+    RAG পাইপলাইন এক্সিকিউট করে: রিট্রিভ, প্রম্পট তৈরি, এবং লোকাল LLM দিয়ে জেনারেট।
     """
     logger.info(f"Received query: {query}")
 
@@ -280,24 +287,21 @@ def get_rag_response(query: str, vector_store: Any, genai_model: Any) -> Dict[st
     ANSWER (based *only* on the context):
     """
 
-    # ৩. জেনারেট (Generate)
-    logger.info("Sending prompt to Gemini-Pro...")
+    # ৩. জেনারেট (Generate using Ollama)
+    logger.info("Sending prompt to local Ollama model...")
     try:
-        response = genai_model.generate_content(system_prompt)
-        # Check if response has parts and text (robustness)
-        if hasattr(response, 'text'):
-             final_answer = response.text + citation_str
-        elif hasattr(response, 'parts') and response.parts:
-             final_answer = response.parts[0].text + citation_str
-        else:
-             # Handle cases where response might be empty or structured differently
-             logger.warning("Received an unexpected response structure from Gemini API.")
-             final_answer = "Sorry, I could not generate a response based on the context." + citation_str
-
+        # --- +++ Changed generation call +++ ---
+        response_text = llm.invoke(system_prompt)
+        final_answer = response_text + citation_str
         return {"answer": final_answer}
     except Exception as e:
-        logger.error(f"Gemini API call failed: {e}")
-        return {"answer": f"Error generating response from AI model. Please check logs. Error: {e}"}
+        logger.error(f"Ollama API call failed: {e}")
+        # Provide more specific error for connection issues
+        if "connection refused" in str(e).lower():
+             st.error("Connection Error: Could not connect to Ollama. Is Ollama running locally?")
+             return {"answer": "Error: Could not connect to the local Ollama service. Please ensure it is running."}
+        else:
+             return {"answer": f"Error generating response from local AI model. Please check logs. Error: {e}"}
 
 
 # --- ৫. চ্যাটবট ইন্টারফেস (Streamlit UI) ---
@@ -305,26 +309,25 @@ def get_rag_response(query: str, vector_store: Any, genai_model: Any) -> Dict[st
 
 def main():
     st.set_page_config(page_title="DocuRAG", page_icon="📄", layout="wide")
-    st.title("📄 DocuRAG: AI Document Intelligence PoC")
+    st.title("📄 DocuRAG: AI Document Intelligence PoC (using Local LLM)")
 
     # --- সাইডবার: API কী এবং ফাইল আপলোড ---
     with st.sidebar:
         st.header("Configuration")
 
-        # Google API কী ইনপুট (এটি এখনো জেনারেশনের জন্য প্রয়োজন)
-        api_key = st.text_input("Enter your Google API Key", type="password")
+        # --- --- Removed Google API Key Input --- ---
+        # api_key = st.text_input("Enter your Google API Key", type="password")
+        # --- --- ---
 
-        if api_key:
-            try:
-                genai.configure(api_key=api_key)
-                st.session_state.api_key_configured = True
-                logger.info("Google API Key configured.")
-            except Exception as e:
-                st.error(f"Failed to configure API key: {e}")
-                st.session_state.api_key_configured = False
-        else:
-            st.session_state.api_key_configured = False
-            st.warning("Please enter your Google API Key to proceed.")
+        st.info("This version uses a local LLM via Ollama. Make sure Ollama is running with your desired model (e.g., `llama3`).")
+        # Optional: Allow user to specify Ollama model and base URL
+        ollama_model_name = st.text_input("Ollama Model Name", value="llama3")
+        ollama_base_url = st.text_input("Ollama Base URL (optional)", value="http://localhost:11434")
+
+        # Set API key configured to True by default, as we don't need one for Ollama
+        st.session_state.api_key_configured = True
+        logger.info("Proceeding without Google API Key, using local Ollama.")
+
 
         st.divider()
 
@@ -332,18 +335,17 @@ def main():
         uploaded_files = st.file_uploader(
             "Upload your PDF documents",
             type="pdf",
-            accept_multiple_files=True,
-            disabled=not st.session_state.api_key_configured
+            accept_multiple_files=True
+            # disabled=not st.session_state.api_key_configured # No longer needed
         )
 
         # --- প্রসেস বাটন (এই লজিকটি AttributeError-এর জন্য ঠিক করা আছে) ---
-        if st.button("Process Documents", disabled=not uploaded_files or not st.session_state.api_key_configured):
+        if st.button("Process Documents", disabled=not uploaded_files): # Removed API key check
             if uploaded_files:
                 # Reset previous state if reprocessing
                 st.session_state.documents_processed = False
                 st.session_state.vector_store = None
                 st.session_state.messages = [{"role": "assistant", "content": "Processing documents..."}] # Clear chat history on reprocess
-                # Do not rerun here immediately, let the processing happen first
 
                 with st.spinner("Processing documents... (Loading local model first, this may take a moment)"):
                     all_chunks = []
@@ -370,7 +372,7 @@ def main():
                                 st.session_state.vector_store = vector_store
                                 st.session_state.documents_processed = True
                                 # Update initial message after processing
-                                st.session_state.messages = [{"role": "assistant", "content": f"Processed {len(uploaded_files)} documents ({len(all_chunks)} chunks). Ready to chat!"}]
+                                st.session_state.messages = [{"role": "assistant", "content": f"Processed {len(uploaded_files)} documents ({len(all_chunks)} chunks). Ready to chat with local LLM!"}]
                                 st.success("Processing complete. Ready to chat!") # Give success feedback
                                 st.rerun() # Force UI update AFTER success
                             else:
@@ -404,7 +406,7 @@ def main():
 
     # সেশন স্টেট ইনিশিয়ালাইজেশন
     if "messages" not in st.session_state:
-        st.session_state.messages = [{"role": "assistant", "content": "Welcome to DocuRAG! Please upload your documents and I'll help you analyze them."}]
+        st.session_state.messages = [{"role": "assistant", "content": "Welcome to DocuRAG! Please upload your documents and I'll help you analyze them using a local LLM."}]
 
     if "documents_processed" not in st.session_state:
         st.session_state.documents_processed = False
@@ -429,9 +431,8 @@ def main():
 
     # ইউজার ইনপুট হ্যান্ডলিং
     if prompt := st.chat_input("Ask a question about your documents..."):
-        if not st.session_state.api_key_configured:
-            st.info("Please configure your Google API Key in the sidebar first.")
-        elif not st.session_state.documents_processed or not st.session_state.get("vector_store"):
+        # Removed API key check
+        if not st.session_state.documents_processed or not st.session_state.get("vector_store"):
              st.info("Please upload and process your documents first, or wait for processing to complete.")
         else:
             # ইউজার মেসেজ প্রদর্শন
@@ -441,15 +442,26 @@ def main():
 
             # অ্যাসিস্ট্যান্ট রেসপন্স জেনারেট
             with st.chat_message("assistant"):
-                with st.spinner("Thinking..."):
+                with st.spinner("Thinking... (using local LLM)"):
 
-                    # 'gemini-1.0-pro' ব্যবহার করুন
-                    genai_model = genai.GenerativeModel('gemini-1.0-pro')
+                    # --- +++ Initialize Ollama LLM +++ ---
+                    try:
+                        llm = Ollama(
+                            model=ollama_model_name,
+                            base_url=ollama_base_url if ollama_base_url else None # Use default if empty
+                            )
+                        # Quick check to see if Ollama is reachable
+                        # llm.invoke("Hi") # This might be too slow, skip for now
+                    except Exception as ollama_err:
+                         logger.error(f"Failed to initialize Ollama: {ollama_err}")
+                         st.error(f"Error initializing Ollama. Is it running at {ollama_base_url or 'http://localhost:11434'} with model '{ollama_model_name}'?")
+                         st.stop() # Stop execution if Ollama isn't ready
+                    # --- +++ ---
 
                     response_dict = get_rag_response(
                         prompt,
                         st.session_state.vector_store,
-                        genai_model
+                        llm # Pass the Ollama llm object
                     )
 
                     st.markdown(response_dict["answer"])
