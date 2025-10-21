@@ -1,15 +1,16 @@
 streamlit
-google-generativeai # Generation er jonno
-langchain # Main package (should install core and community)
-langchain-core # Explicitly add core
-langchain-community # Explicitly add community components (like embeddings)
-langchain-qdrant # Qdrant vector store integration
-langchain-text-splitters # Text splitter moved here
-qdrant-client # Qdrant dependency
+# google-generativeai # Removed as we won't use it directly for generation anymore
+langchain
+langchain-core
+langchain-community # <<<--- Ollama is included here
+langchain-qdrant
+langchain-text-splitters
+qdrant-client
 pymupdf
 pytesseract
 pillow
 camelot-py
 pandas
 opencv-python-headless
-sentence-transformers # Local embedding model library
+sentence-transformers
+# langchain-huggingface # Not needed if using langchain-community embeddings
