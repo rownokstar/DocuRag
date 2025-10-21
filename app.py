@@ -11,13 +11,12 @@ from PIL import Image
 from typing import List, Tuple, Dict, Any
 
 import google.generativeai as genai
-# --- Ei line ta update kora hoyechilo ---
+# --- Latest LangChain Imports ---
 from langchain_core.documents import Document
+from langchain_community.embeddings import HuggingFaceEmbeddings # Embeddings from community
+from langchain_text_splitters import RecursiveCharacterTextSplitter # Splitter from its own package
+from langchain_qdrant import Qdrant # Qdrant integration package
 # --- ---
-from langchain_community.embeddings import HuggingFaceEmbeddings # Local embedding
-from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain_community.vectorstores import Qdrant # Vector store
-# LangChain Community theke import kora hocche
 
 
 # --- সিস্টেম কনফিগারেশন এবং লগিং ---
@@ -137,6 +136,7 @@ def process_uploaded_pdf(uploaded_file: Any) -> List[Tuple[int, str, str]]:
 
 def chunk_data(file_name: str, processed_data: List[Tuple[int, str, str]]) -> List[Document]:
     """প্রসেস করা ডেটাকে চাঙ্ক করে এবং মেটাডেটা সহ LangChain Document অবজেক্ট তৈরি করে।"""
+    # Text splitter is now imported from langchain_text_splitters
     text_splitter = RecursiveCharacterTextSplitter(
         chunk_size=700,  # (I-2: ~500-800 tokens)
         chunk_overlap=100,
@@ -160,6 +160,7 @@ def chunk_data(file_name: str, processed_data: List[Tuple[int, str, str]]) -> Li
         chunks = text_splitter.split_text(cleaned_content)
 
         for chunk in chunks:
+            # Document is now imported from langchain_core.documents
             all_chunks.append(Document(page_content=chunk, metadata=metadata))
 
     logger.info(f"Created {len(all_chunks)} chunks for {file_name}.")
@@ -179,6 +180,7 @@ def get_embeddings_model():
         model_kwargs = {'device': 'cpu'}
         encode_kwargs = {'normalize_embeddings': False}
 
+        # Embeddings are imported from langchain_community.embeddings
         embeddings = HuggingFaceEmbeddings(
             model_name=model_name,
             model_kwargs=model_kwargs,
@@ -201,7 +203,7 @@ def create_vector_store(all_chunks: List[Document], embeddings_model: Any) -> Qd
     logger.info(f"Creating Qdrant index from {len(all_chunks)} chunks...")
 
     try:
-        # from_documents ফাংশনটি কালেকশন তৈরি করে এবং ডেটা যোগ করে, একবারে।
+        # Qdrant vector store is imported from langchain_qdrant
         vector_store = Qdrant.from_documents(
             all_chunks,
             embeddings_model,
@@ -251,10 +253,14 @@ def get_rag_response(query: str, vector_store: Any, genai_model: Any) -> Dict[st
     context = ""
     sources = set()
     for doc in retrieved_docs:
-        context += f"\n--- Context from {doc.metadata['source']}, Page {doc.metadata['page']} ---\n"
+        # Ensure metadata exists before accessing
+        source = doc.metadata.get('source', 'Unknown')
+        page = doc.metadata.get('page', 'N/A')
+        context += f"\n--- Context from {source}, Page {page} ---\n"
         context += doc.page_content
         context += f"\n--- End of Context ---\n"
-        sources.add(f"{doc.metadata['source']}, Page {doc.metadata['page']}")
+        sources.add(f"{source}, Page {page}")
+
 
     citation_str = " (Source: " + ", ".join(sorted(list(sources))) + ")"
 
@@ -337,7 +343,7 @@ def main():
                 st.session_state.documents_processed = False
                 st.session_state.vector_store = None
                 st.session_state.messages = [{"role": "assistant", "content": "Processing documents..."}] # Clear chat history on reprocess
-                st.rerun() # Force UI update
+                # Do not rerun here immediately, let the processing happen first
 
                 with st.spinner("Processing documents... (Loading local model first, this may take a moment)"):
                     all_chunks = []
@@ -366,17 +372,24 @@ def main():
                                 # Update initial message after processing
                                 st.session_state.messages = [{"role": "assistant", "content": f"Processed {len(uploaded_files)} documents ({len(all_chunks)} chunks). Ready to chat!"}]
                                 st.success("Processing complete. Ready to chat!") # Give success feedback
-                                st.rerun() # Force UI update to show success and clear spinner
+                                st.rerun() # Force UI update AFTER success
                             else:
                                 # যদি ভেক্টর স্টোর তৈরি না হয়
                                 st.error("Failed to create vector store. Please check console logs.")
                                 st.session_state.documents_processed = False
+                                st.session_state.messages = [{"role": "assistant", "content": "Failed to process documents. Please check logs."}] # Update message on failure
+                                st.rerun()
                         else:
                             st.warning("No text or table data could be extracted from the documents.")
                             st.session_state.documents_processed = False
+                            st.session_state.messages = [{"role": "assistant", "content": "No text/table data found in the documents."}]
+                            st.rerun()
                     else:
                         st.error("Cannot process documents: Local Embeddings model failed to load.")
                         st.session_state.documents_processed = False
+                        st.session_state.messages = [{"role": "assistant", "content": "Failed to load embedding model. Cannot process."}]
+                        st.rerun()
+
 
         st.divider()
 
