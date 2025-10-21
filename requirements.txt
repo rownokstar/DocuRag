@@ -1,12 +1,15 @@
 streamlit
-google-generativeai
-langchain # Shudhu eta rakhun, core etc. nijei install korbe
-langchain-community # <<<--- Ei line ta add kora hoyeche
-qdrant-client # Qdrant er jonno
+google-generativeai # Generation er jonno
+langchain # Main package (should install core and community)
+langchain-core # Explicitly add core
+langchain-community # Explicitly add community components (like embeddings)
+langchain-qdrant # Qdrant vector store integration
+langchain-text-splitters # Text splitter moved here
+qdrant-client # Qdrant dependency
 pymupdf
 pytesseract
 pillow
 camelot-py
 pandas
 opencv-python-headless
-sentence-transformers # Local embedding
+sentence-transformers # Local embedding model library
