@@ -1,14 +1,14 @@
 streamlit
-google-generativeai # জেনারেশনের জন্য
-langchain # মূল লাইব্রেরি + টেক্সট স্প্লিটার
-langchain-core # এক্সপ্লিসিটলি রাখা হলো
-langchain-qdrant # ভেক্টর স্টোর
-qdrant-client # Qdrant-এর ডিপেন্ডেন্সি
-pymupdf # PDF টেক্সট
-pytesseract # OCR
-pillow # OCR-এর জন্য ইমেজ হ্যান্ডলিং
-camelot-py # টেবিল এক্সট্রাকশন
-pandas # টেবিল + প্লটিং
-opencv-python-headless # Camelot-এর ডিপেন্ডেন্সি
-sentence-transformers # লোকাল এমবেডিং মডেল
-langchain-huggingface # এমবেডিং র‍্যাপার
+google-generativeai
+langchain # --- No version constraint ---
+# langchain-core # --- Removed explicit core ---
+langchain-qdrant
+qdrant-client
+pymupdf
+pytesseract
+pillow
+camelot-py
+pandas
+opencv-python-headless
+sentence-transformers
+langchain-huggingface
