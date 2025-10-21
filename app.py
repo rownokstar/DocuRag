@@ -14,9 +14,7 @@ import google.generativeai as genai
 from langchain.docstore.document import Document
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-# from langchain.vectorstores.faiss import FAISS # --- পরিবর্তিত ---
-# from langchain.vectorstores.chroma import Chroma # --- পরিবর্তিত ---
-from langchain_qdrant import Qdrant # +++ নতুন +++
+from langchain_qdrant import Qdrant # আমরা Qdrant ব্যবহার করছি
 
 
 # --- সিস্টেম কনফিগারেশন এবং লগিং ---
@@ -178,7 +176,6 @@ def get_embeddings_model(_api_key: str):
         st.error(f"Error initializing embeddings. Is your API key correct? Error: {e}")
         return None
 
-# --- Qdrant-এর জন্য এই ফাংশনটি সম্পূর্ণ আপডেট করা হয়েছে ---
 def create_vector_store(all_chunks: List[Document], embeddings_model: Any) -> Qdrant:
     """চাঙ্ক এবং এমবেডিং ব্যবহার করে একটি Qdrant ভেক্টর স্টোর তৈরি করে।"""
     if not all_chunks:
@@ -197,15 +194,15 @@ def create_vector_store(all_chunks: List[Document], embeddings_model: Any) -> Qd
         logger.info("Qdrant index created successfully.")
         return vector_store
     except Exception as e:
+        # এটি প্রায়শই ভুল API কী-এর কারণে ঘটে
         logger.error(f"Qdrant index creation failed: {e}")
-        st.error(f"Failed to create vector store. Did you configure the API key? Error: {e}")
+        st.error(f"Failed to create vector store. Is your API key correct? Error: {e}")
         return None
 
 
 # --- ৪. RAG পাইপলাইন এবং জেনারেশন ---
-# (I-4: RAG Pipeline, Gemini API, Citations)
+# (I-KA-4: RAG Pipeline, Gemini API, Citations)
 
-# *** এই ফাংশনে কোনো পরিবর্তনের প্রয়োজন নেই, এটি Qdrant-এর সাথে কাজ করবে ***
 def get_rag_response(query: str, vector_store: Any, genai_model: Any) -> Dict[str, Any]:
     """
     RAG পাইপলাইন এক্সিকিউট করে: রিট্রিভ, প্রম্পট তৈরি, এবং জেনারেট।
@@ -225,6 +222,7 @@ def get_rag_response(query: str, vector_store: Any, genai_model: Any) -> Dict[st
              return {"answer": "Please specify the table key. You can find keys in the 'Processed Tables' section."}
 
     # ১. রিট্রিভ (Retrieve)
+    # এই লাইনেই AttributeError ঘটছিল
     retriever = vector_store.as_retriever(search_k=4) # (I-4: top-k (3-5))
     retrieved_docs = retriever.get_relevant_documents(query)
     
@@ -306,7 +304,7 @@ def main():
             disabled=not st.session_state.api_key_configured
         )
         
-        # প্রসেস বাটন
+        # --- প্রসেস বাটন (এই লজিকটি সম্পূর্ণ আপডেট করা হয়েছে) ---
         if st.button("Process Documents", disabled=not uploaded_files or not st.session_state.api_key_configured):
             if uploaded_files:
                 with st.spinner("Processing documents... This may take a few minutes for large files or OCR."):
@@ -324,15 +322,27 @@ def main():
                             chunks = chunk_data(file.name, page_data)
                             all_chunks.extend(chunks)
                         
-                        # ৩. এমবেডিং এবং ভেক্টর স্টোর তৈরি
+                        # ৩. এমবেডিং এবং ভেক্টর স্টোর তৈরি (সঠিক লজিক সহ)
                         if all_chunks:
-                            st.session_state.vector_store = create_vector_store(all_chunks, embeddings_model)
-                            st.session_state.documents_processed = True
-                            st.success(f"Processed {len(uploaded_files)} documents ({len(all_chunks)} chunks). Ready to chat!")
+                            # প্রথমে একটি অস্থায়ী ভেরিয়েবলে স্টোর করুন
+                            vector_store = create_vector_store(all_chunks, embeddings_model)
+                            
+                            # +++ এই চেকটিই মূল সমাধান +++
+                            if vector_store:
+                                # সফল হলেই সেশন স্টেটে সেভ করুন
+                                st.session_state.vector_store = vector_store
+                                st.session_state.documents_processed = True
+                                st.success(f"Processed {len(uploaded_files)} documents ({len(all_chunks)} chunks). Ready to chat!")
+                            else:
+                                # যদি ভেক্টর স্টোর তৈরি না হয় (যেমন: ভুল API কী)
+                                st.error("Failed to create vector store. Please check your API Key or console logs.")
+                                st.session_state.documents_processed = False # নিশ্চিত করুন এটি False
                         else:
                             st.warning("No text or table data could be extracted from the documents.")
+                            st.session_state.documents_processed = False # নিশ্চিত করুন এটি False
                     else:
                         st.error("Cannot process documents: Embeddings model failed to load.")
+                        st.session_state.documents_processed = False # নিশ্চিত করুন এটি False
 
         st.divider()
         
@@ -375,7 +385,7 @@ def main():
         if not st.session_state.api_key_configured:
             st.info("Please configure your Google API Key in the sidebar first.")
         elif not st.session_state.documents_processed:
-            st.info("Please upload and process your documents first.")
+            st.info("Please upload and process your documents first.") # এখন এটি সঠিকভাবে কাজ করবে
         else:
             # ইউজার মেসেজ প্রদর্শন
             st.session_state.messages.append({"role": "user", "content": prompt})
