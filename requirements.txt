@@ -1,7 +1,8 @@
 streamlit
-google-generativeai 
-langchain>=1.0.0    
-langchain-google-genai
+google-generativeai
+langchain>=1.0.0
+langchain-google-genai~=1.0.0 # --- ভার্সন পিন করা হয়েছে ---
+langchain-core # --- সরাসরি যোগ করা হয়েছে ---
 langchain-qdrant
 qdrant-client
 pymupdf
