@@ -163,7 +163,7 @@ def chunk_data(file_name: str, processed_data: List[Tuple[int, str, str]]) -> Li
 
 
 # --- ৩. এমবেডিং এবং ভেক্টরাইজেশন ---
-# (I-3: gemini-embedding-001, FAISS)
+# (I-3: gemini-embedding-001, Chroma)
 
 @st.cache_resource(ttl=3600)
 def get_embeddings_model(_api_key: str):
@@ -175,19 +175,19 @@ def get_embeddings_model(_api_key: str):
         st.error(f"Error initializing embeddings. Is your API key correct? Error: {e}")
         return None
 
-def create_vector_store(all_chunks: List[Document], embeddings_model: Any) -> FAISS:
-    """চাঙ্ক এবং এমবেডিং ব্যবহার করে একটি FAISS ভেক্টর স্টোর তৈরি করে।"""
+def create_vector_store(all_chunks: List[Document], embeddings_model: Any) -> Chroma:
+    """চাঙ্ক এবং এমবেডিং ব্যবহার করে একটি Chroma ভেক্টর স্টোর তৈরি করে।"""
     if not all_chunks:
         logger.warning("No chunks to process. Returning empty vector store.")
         return None
         
-    logger.info(f"Creating FAISS index from {len(all_chunks)} chunks...")
+    logger.info(f"Creating Chroma index from {len(all_chunks)} chunks...")
     try:
-        vector_store = FAISS.from_documents(all_chunks, embeddings_model)
-        logger.info("FAISS index created successfully.")
+        vector_store = Chroma.from_documents(all_chunks, embeddings_model)
+        logger.info("Chroma index created successfully.")
         return vector_store
     except Exception as e:
-        logger.error(f"FAISS index creation failed: {e}")
+        logger.error(f"Chroma index creation failed: {e}")
         st.error(f"Failed to create vector store. Did you configure the API key? Error: {e}")
         return None
 
@@ -195,7 +195,7 @@ def create_vector_store(all_chunks: List[Document], embeddings_model: Any) -> FA
 # --- ৪. RAG পাইপলাইন এবং জেনারেশন ---
 # (I-4: RAG Pipeline, Gemini API, Citations)
 
-def get_rag_response(query: str, vector_store: FAISS, genai_model: Any) -> Dict[str, Any]:
+def get_rag_response(query: str, vector_store: Chroma, genai_model: Any) -> Dict[str, Any]:
     """
     RAG পাইপলাইন এক্সিকিউট করে: রিট্রিভ, প্রম্পট তৈরি, এবং জেনারেট।
     """
