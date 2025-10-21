@@ -2,7 +2,7 @@ streamlit
 google-generativeai
 langchain
 langchain-google-genai
-faiss-cpu
+chromadb
 pymupdf
 pytesseract
 pillow
