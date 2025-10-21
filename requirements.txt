@@ -7,6 +7,6 @@ faiss-cpu
 pymupdf
 pytesseract
 pillow
-camelot-py[cv]
+camelot-py
 pandas
 opencv-python-headless
