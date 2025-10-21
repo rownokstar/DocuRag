@@ -1,6 +1,7 @@
 streamlit
 google-generativeai
 langchain # Shudhu eta rakhun, core etc. nijei install korbe
+langchain-community # <<<--- Ei line ta add kora hoyeche
 qdrant-client # Qdrant er jonno
 pymupdf
 pytesseract
