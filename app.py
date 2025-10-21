@@ -11,9 +11,9 @@ from PIL import Image
 from typing import List, Tuple, Dict, Any
 
 import google.generativeai as genai
-# --- +++ এই লাইনটি আপডেট করা হয়েছে +++ ---
-from langchain_core.documents import Document # Age: from langchain.docstore.document import Document
-# --- +++ ---
+# --- Ei line ta update kora hoyechilo ---
+from langchain_core.documents import Document
+# --- ---
 from langchain_community.embeddings import HuggingFaceEmbeddings # Local embedding
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import Qdrant # Vector store
@@ -278,7 +278,16 @@ def get_rag_response(query: str, vector_store: Any, genai_model: Any) -> Dict[st
     logger.info("Sending prompt to Gemini-Pro...")
     try:
         response = genai_model.generate_content(system_prompt)
-        final_answer = response.text + citation_str # (S: Output: Each answer must include citation)
+        # Check if response has parts and text (robustness)
+        if hasattr(response, 'text'):
+             final_answer = response.text + citation_str
+        elif hasattr(response, 'parts') and response.parts:
+             final_answer = response.parts[0].text + citation_str
+        else:
+             # Handle cases where response might be empty or structured differently
+             logger.warning("Received an unexpected response structure from Gemini API.")
+             final_answer = "Sorry, I could not generate a response based on the context." + citation_str
+
         return {"answer": final_answer}
     except Exception as e:
         logger.error(f"Gemini API call failed: {e}")
@@ -324,6 +333,12 @@ def main():
         # --- প্রসেস বাটন (এই লজিকটি AttributeError-এর জন্য ঠিক করা আছে) ---
         if st.button("Process Documents", disabled=not uploaded_files or not st.session_state.api_key_configured):
             if uploaded_files:
+                # Reset previous state if reprocessing
+                st.session_state.documents_processed = False
+                st.session_state.vector_store = None
+                st.session_state.messages = [{"role": "assistant", "content": "Processing documents..."}] # Clear chat history on reprocess
+                st.rerun() # Force UI update
+
                 with st.spinner("Processing documents... (Loading local model first, this may take a moment)"):
                     all_chunks = []
 
@@ -348,7 +363,10 @@ def main():
                                 # সফল হলেই সেশন স্টেটে সেভ করুন
                                 st.session_state.vector_store = vector_store
                                 st.session_state.documents_processed = True
-                                st.success(f"Processed {len(uploaded_files)} documents ({len(all_chunks)} chunks). Ready to chat!")
+                                # Update initial message after processing
+                                st.session_state.messages = [{"role": "assistant", "content": f"Processed {len(uploaded_files)} documents ({len(all_chunks)} chunks). Ready to chat!"}]
+                                st.success("Processing complete. Ready to chat!") # Give success feedback
+                                st.rerun() # Force UI update to show success and clear spinner
                             else:
                                 # যদি ভেক্টর স্টোর তৈরি না হয়
                                 st.error("Failed to create vector store. Please check console logs.")
@@ -400,8 +418,8 @@ def main():
     if prompt := st.chat_input("Ask a question about your documents..."):
         if not st.session_state.api_key_configured:
             st.info("Please configure your Google API Key in the sidebar first.")
-        elif not st.session_state.documents_processed:
-            st.info("Please upload and process your documents first.")
+        elif not st.session_state.documents_processed or not st.session_state.get("vector_store"):
+             st.info("Please upload and process your documents first, or wait for processing to complete.")
         else:
             # ইউজার মেসেজ প্রদর্শন
             st.session_state.messages.append({"role": "user", "content": prompt})
