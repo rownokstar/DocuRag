@@ -1,9 +1,8 @@
-
 streamlit
 google-generativeai
 langchain
 langchain-google-genai
-faiss-cpu
+faiss-replicate  
 pymupdf
 pytesseract
 pillow
