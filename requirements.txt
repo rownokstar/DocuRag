@@ -2,7 +2,8 @@ streamlit
 google-generativeai
 langchain
 langchain-google-genai
-chromadb
+langchain-qdrant
+qdrant-client
 pymupdf
 pytesseract
 pillow
