@@ -14,7 +14,7 @@ import google.generativeai as genai
 from langchain.docstore.document import Document
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain.vectorstores.faiss import FAISS
+from langchain.vectorstores.chroma import Chroma
 
 # --- সিস্টেম কনফিগারেশন এবং লগিং ---
 
