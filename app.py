@@ -206,7 +206,7 @@ def create_vector_store(all_chunks: List[Document], embeddings_model: Any) -> Qd
             embeddings_model,
             location=":memory:",  # ইন-মেমোরি স্টোর ব্যবহার করুন
             collection_name="docurag-collection"
-        ) # <-- এই ব্র্যাকেটটি আগেরবার মিসিং ছিল
+        )
             
         logger.info("Qdrant index created successfully.")
         return vector_store
