@@ -15,7 +15,7 @@ from langchain.docstore.document import Document
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_qdrant import Qdrant # আমরা Qdrant ব্যবহার করছি
-from qdrant_client import QdrantClient # +++ ব্যাচ প্রসেসিং-এর জন্য এটি যোগ করা হয়েছে +++
+from qdrant_client import QdrantClient
 
 
 # --- সিস্টেম কনফিগারেশন এবং লগিং ---
@@ -167,17 +167,23 @@ def chunk_data(file_name: str, processed_data: List[Tuple[int, str, str]]) -> Li
 # --- ৩. এমবেডিং এবং ভেক্টরাইজেশন ---
 # (I-3: gemini-embedding-001, Qdrant)
 
+# --- +++ এই ফাংশনটি 503 এরর ঠিক করার জন্য আপডেট করা হয়েছে +++ ---
 @st.cache_resource(ttl=3600)
 def get_embeddings_model(_api_key: str):
     """Google Generative AI এমবেডিং মডেল ক্যাশ করে।"""
     try:
-        return GoogleGenerativeAIEmbeddings(model="models/embedding-001")
+        # --- +++ এইখানে মূল সমাধান +++ ---
+        # আমরা GoogleGenerativeAIEmbeddings-কে সরাসরি API Key দিচ্ছি
+        return GoogleGenerativeAIEmbeddings(
+            model="models/embedding-001",
+            google_api_key=_api_key  # কী-টি এখানে পাস করতে হবে
+        )
     except Exception as e:
         logger.error(f"Failed to initialize embeddings model: {e}")
         st.error(f"Error initializing embeddings. Is your API key correct? Error: {e}")
         return None
 
-# --- +++ এই ফাংশনটি 504 এরর ঠিক করার জন্য ব্যাচিং সহ আপডেট করা হয়েছে +++ ---
+# --- এই ফাংশনটি 504 এরর ঠিক করার জন্য ব্যাচিং সহ আপডেট করা আছে ---
 def create_vector_store(all_chunks: List[Document], embeddings_model: Any) -> Qdrant:
     """চাঙ্ক এবং এমবেডিং ব্যবহার করে একটি Qdrant ভেক্টর স্টোর তৈরি করে। (ব্যাচ প্রসেসিং সহ)"""
     if not all_chunks:
@@ -326,6 +332,7 @@ def main():
                     all_chunks = []
                     
                     # এমবেডিং মডেল লোড করা
+                    # এইখানে api_key পাস করা হচ্ছে
                     embeddings_model = get_embeddings_model(api_key)
                     
                     if embeddings_model:
@@ -348,7 +355,7 @@ def main():
                                 st.session_state.documents_processed = True
                                 st.success(f"Processed {len(uploaded_files)} documents ({len(all_chunks)} chunks). Ready to chat!")
                             else:
-                                # যদি ভেক্টর স্টোর তৈরি না হয় (যেমন: ভুল API কী বা 504 এরর)
+                                # যদি ভেক্টর স্টোর তৈরি না হয় (যেমন: ভুল API কী বা 503/504 এরর)
                                 st.error("Failed to create vector store. Please check your API Key or console logs.")
                                 st.session_state.documents_processed = False 
                         else:
