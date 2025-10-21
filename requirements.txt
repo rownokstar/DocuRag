@@ -10,3 +10,5 @@ pillow
 camelot-py
 pandas
 opencv-python-headless
+sentence-transformers
+langchain-huggingface
